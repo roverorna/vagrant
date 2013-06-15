@@ -1,3 +1,5 @@
+require "tempfile"
+
 module VagrantPlugins
   module Ansible
     class Provisioner < Vagrant.plugin("2", :provisioner)
@@ -6,8 +8,19 @@ module VagrantPlugins
 
         options = %W[--private-key=#{ssh[:private_key_path]} --user=#{ssh[:username]}]
         options << "--extra-vars=" + config.extra_vars.map{|k,v| "#{k}=#{v}"}.join(' ') if config.extra_vars
-        options << "--inventory-file=#{config.inventory_file}" if config.inventory_file
         options << "--ask-sudo-pass" if config.ask_sudo_pass
+
+        if config.inventory_file
+            options << "--inventory-file=#{config.inventory_file}"
+        else
+            inventory_file = Tempfile.open("vagrant_ansible_inventory") do |f|
+                f.write("#{@machine.name} ansible_ssh_host=#{ssh[:host]}" \
+                        " ansible_ssh_port=#{ssh[:port]}")
+                f
+            end
+            options << "--inventory-file=#{inventory_file.path}"
+        end
+
 
         if config.limit
           if not config.limit.kind_of?(Array)
@@ -38,6 +51,8 @@ module VagrantPlugins
           end
         rescue Vagrant::Util::Subprocess::LaunchError
           raise Vagrant::Errors::AnsiblePlaybookAppNotFound
+        ensure
+          inventory_file.unlink if inventory_file
         end
       end
     end
